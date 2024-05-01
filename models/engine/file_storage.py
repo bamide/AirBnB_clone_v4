@@ -1,97 +1,96 @@
 #!/usr/bin/python3
-"""Module for FileStorage class."""
-import datetime
+"""Module that defines FileStorage class"""
 import json
 import os
+from models.base_model import BaseModel
+from models.user import User
+from models.place import Place
+from models.state import State
+from models.city import City
+from models.amenity import Amenity
+from models.review import Review
+
+classes = {
+    "BaseModel": BaseModel, "User": User,
+    "Place": Place, "State": State,
+    "City": City, "Amenity": Amenity,
+    "Review": Review
+}
 
 
 class FileStorage:
+    """class that uses private class attributes below"""
 
-    """Class for serializtion and deserialization of base classes."""
     __file_path = "file.json"
     __objects = {}
 
-    def all(self):
-        """Returns __objects dictionary."""
-        # TODO: should this be a copy()?
-        return FileStorage.__objects
+    def all(self, cls=None):
+        """returns a list of objects of a specific class type if cls provided
+        otherwise returns a dictionary of all objects.
+
+        Args:
+            cls (class, optional): The class type to filter objects.
+        Returns:
+            dict or list: If cls is None, returns dict of all objects
+            otherwise returns list of objects of specified class type.
+        """
+        if cls is None:
+            return self.__objects
+        filtered_obj = {}
+        for key, obj in self.__objects.items():
+            if isinstance(obj, cls):
+                filtered_obj[key] = obj
+        return filtered_obj
 
     def new(self, obj):
-        """Sets new obj in __objects dictionary."""
-        # TODO: should these be more precise specifiers?
-        key = "{}.{}".format(type(obj).__name__, obj.id)
-        FileStorage.__objects[key] = obj
+        """sets in __objects the obj with key <obj class name>.id."""
+        key = f"{obj.__class__.__name__}.{obj.id}"
+        self.__objects[key] = obj
 
     def save(self):
-        """Serialzes __objects to JSON file."""
-        with open(FileStorage.__file_path, "w", encoding="utf-8") as f:
-            d = {k: v.to_dict() for k, v in FileStorage.__objects.items()}
-            json.dump(d, f)
+        """Serializes __objects to the JSON file (path: __file_path)."""
+        json_objects = {key: obj.to_dict()
+                        for key, obj in self.__objects.items()}
+        with open(self.__file_path, 'w') as f:
+            json.dump(json_objects, f)
 
-    def classes(self):
-        """Returns a dictionary of valid classes and their references."""
-        from models.base_model import BaseModel
-        from models.user import User
-        from models.state import State
-        from models.city import City
-        from models.amenity import Amenity
-        from models.place import Place
-        from models.review import Review
-
-        classes = {"BaseModel": BaseModel,
-                   "User": User,
-                   "State": State,
-                   "City": City,
-                   "Amenity": Amenity,
-                   "Place": Place,
-                   "Review": Review}
-        return classes
+    def reload_helper(self, data, key):
+        """ reload helper """
+        return classes[data[key]["__class__"]](**data[key])
 
     def reload(self):
-        """Deserializes JSON file into __objects."""
-        if not os.path.isfile(FileStorage.__file_path):
-            return
-        with open(FileStorage.__file_path, "r", encoding="utf-8") as f:
-            obj_dict = json.load(f)
-            obj_dict = {k: self.classes()[v["__class__"]](**v)
-                        for k, v in obj_dict.items()}
-            # TODO: should this overwrite or insert?
-            FileStorage.__objects = obj_dict
+        """Deserializes the JSON file to __objects if exists otherwise no"""
+        if os.path.exists(self.__file_path):
+            try:
+                with open(self.__file_path, 'r') as f:
+                    data = json.load(f)
 
-    def attributes(self):
-        """Returns the valid attributes and their types for classname."""
-        attributes = {
-            "BaseModel":
-                     {"id": str,
-                      "created_at": datetime.datetime,
-                      "updated_at": datetime.datetime},
-            "User":
-                     {"email": str,
-                      "password": str,
-                      "first_name": str,
-                      "last_name": str},
-            "State":
-                     {"name": str},
-            "City":
-                     {"state_id": str,
-                      "name": str},
-            "Amenity":
-                     {"name": str},
-            "Place":
-                     {"city_id": str,
-                      "user_id": str,
-                      "name": str,
-                      "description": str,
-                      "number_rooms": int,
-                      "number_bathrooms": int,
-                      "max_guest": int,
-                      "price_by_night": int,
-                      "latitude": float,
-                      "longitude": float,
-                      "amenity_ids": list},
-            "Review":
-            {"place_id": str,
-                         "user_id": str,
-                         "text": str}
-        }
-        return attributes
+                    for key in data:
+                        self.__objects[key] = self.reload_helper(data, key)
+            except Exception:
+                return
+
+    def get_object_by_id(self, class_name, instance_id):
+        """
+        Retrieve an object by class name and instance ID from the storage.
+        Args:
+            class_name (str): The name of the class.
+            instance_id (str): The instance ID.
+        Returns:
+            object or None: The object if found, or None if not found.
+        """
+        all_objects = self.all()
+        key = "{}.{}".format(class_name, instance_id)
+        return all_objects.get(key)
+
+    def delete(self, obj=None):
+        """deletes object if present"""
+        if obj is not None:
+            del self.__objects[obj.__class__.__name__ + '.' + obj.id]
+            self.save()
+
+    def close(self):
+        """ Close the current storage session by deserializing the json file
+        to objects.
+        """
+        self.reload()
